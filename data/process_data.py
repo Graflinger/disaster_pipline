@@ -1,16 +1,88 @@
 import sys
+import pandas as pd
+from sqlalchemy import create_engine
 
 
 def load_data(messages_filepath, categories_filepath):
-    pass
+    '''
+    Load and merges the 2 given files and returns them as 1 pandas dataframe object
+
+            Parameters:
+                    messages_filepath (str): filepath to messsages csv
+                    categories_filepath (str): filepath to categories csv
+
+            Returns:
+                    df_merged (object): loaded files merged into one dataframe
+    '''
+    
+    df_messages = pd.read_csv("disaster_messages.csv")
+    df_categories = pd.read_csv("disaster_categories.csv")
+    
+    df_merged = pd.merge(df_messages, df_categories, on="id")
+    
+    return df_merged
 
 
 def clean_data(df):
-    pass
+    '''
+    Cleans the merged dataframe from load_data()
+
+            Parameters:
+                    df (object): uncleanded data as dataframe 
+                    
+
+            Returns:
+                    df_cleaned (object): cleaned data as dataframe
+    '''
+    
+    #create a new dataframe with a column for each categorie
+    df_categories = pd.DataFrame(df["categories"].str.split(';', expand=True).values,
+                 columns=[df["categories"].str.split(';')[0]])
+
+    #reset multilevel index by changing columns list so single level index
+    df_categories.columns = df["categories"].str.split(';')[0]
+
+    #only keeping 0 or 1 from values and 
+    for column in df_categories.columns:
+        df_categories[column] = df_categories[column].str[-1:]
+
+    #correct column names
+    temp_col_name_list = []
+    for col_name in df_categories.columns:
+        temp_col_name_list.append(col_name[:-2])
+
+    df_categories.columns = temp_col_name_list
+    
+    #cast all new columns to numeric as they are only 0 and 1
+    df_categories[temp_col_name_list] = df_categories[temp_col_name_list].apply(pd.to_numeric)
+
+    #concat both dataframes to get a single one with full informatio
+    df = pd.concat([df, df_categories], axis=1)
+
+    #drop categories and original column, because they are not needed for further analyis
+    df_cleaned = df.drop(columns=["categories", "original"])
+
+    return df_cleaned
 
 
 def save_data(df, database_filename):
-    pass  
+    '''
+    Takes data as dataframe and stores it into a database at a given location
+
+            Parameters:
+                    df (object): data as dataframe 
+                    database_filename (str): name of the database, where the df will be saved in
+                    
+
+            Returns:
+                    None
+    '''
+    
+    engine = create_engine('sqlite:///' + database_filename, echo=True)
+    sqlite_connection = engine.connect()
+    
+    df.to_sql("disaster_respone", sqlite_connection, if_exists='replace')
+    return  
 
 
 def main():
