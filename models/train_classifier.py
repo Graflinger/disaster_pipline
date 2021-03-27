@@ -18,46 +18,12 @@ import nltk
 nltk.download(['punkt', 'wordnet', 'averaged_perceptron_tagger'])
 
 
-class StartingVerbExtractor(BaseEstimator, TransformerMixin):
-    '''
-    Custom Transformer to evaluate, if a text starts with a verb 
-
-            Parameters:
-                    BaseEstimator (obj): sklearn.base BaseEstimator
-                    TransformerMixin (obj): sklearn.base TransformerMixin
-            Returns:
-                    bool : true if text starts with a verb, else false
-    '''
-    # check if text starts with a verb
-    # return true if it does, false if not
-
-    def starting_verb(self, text):
-        sentence_list = nltk.sent_tokenize(text)
-        for sentence in sentence_list:
-            pos_tags = nltk.pos_tag(tokenize(sentence))
-            try:
-                first_word, first_tag = pos_tags[0]
-                if first_tag in ['VB', 'VBP'] or first_word == 'RT':
-                    return True
-            except:
-                return False
-        return False
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, X):
-        X_tagged = pd.Series(X).apply(self.starting_verb)
-        return pd.DataFrame(X_tagged)
-
 
 def load_data(database_filepath):
     '''
     Load data from databse
-
             Parameters:
                     messages_filepath (str): filepath to database
-
             Returns:
                     X (obj): messages column from the data
                     y (obj): dataframe including all categories
@@ -69,9 +35,12 @@ def load_data(database_filepath):
     engine = create_engine('sqlite:///' + database_filepath)
     df = pd.read_sql_table(table_name, con=engine)
 
+   # df = df.iloc[:,:]
     # creating return variables
     X = df["message"].values
+
     y = df.iloc[:, 5:]
+    y=y.astype('int')
     category_names = y.columns
 
     return X, y, category_names
@@ -80,7 +49,6 @@ def load_data(database_filepath):
 def tokenize(text):
     '''
     tokenizes text for further analysis
-
             Parameters:
                     text (str): text which should get tokenized
             Returns:
@@ -108,7 +76,6 @@ def tokenize(text):
 def build_model():
     '''
     build the GridSearchCV Model via usage of a pipeline and defines the parameters for the moden 
-
             Parameters:
                     None
             Returns:
@@ -117,35 +84,17 @@ def build_model():
 
     # define Pipeline
     pipeline = Pipeline([
-        ('features', FeatureUnion([
-
-            ('text_pipeline', Pipeline([
-                ('vect', CountVectorizer(tokenizer=tokenize)),
-                ('tfidf', TfidfTransformer())
-            ])),
-
-            ('starting_verb', StartingVerbExtractor())
-        ])),
-
-        ('clf', MultiOutputClassifier(RandomForestClassifier()))
-    ])
+        ('vect', CountVectorizer(tokenizer=tokenize)),
+        ('tfidf', TfidfTransformer()),
+        ('clf', MultiOutputClassifier(RandomForestClassifier()))])
 
     # define parameters
     parameters = {
-        'features__text_pipeline__vect__ngram_range': ((1, 1), (1, 2)),
-        'features__text_pipeline__vect__max_df': (0.5, 0.75, 1.0),
-        'features__text_pipeline__vect__max_features': (None, 5000, 10000),
-        'features__text_pipeline__tfidf__use_idf': (True, False),
         'clf__estimator__min_samples_leaf': [50, 100, 200],
         'clf__estimator__min_samples_leaf': [2, 3, 4],
-        'features__transformer_weights': (
-            {'text_pipeline': 1, 'starting_verb': 0.5},
-            {'text_pipeline': 0.5, 'starting_verb': 1},
-            {'text_pipeline': 0.8, 'starting_verb': 1},
-        )
     }
 
-    cv = GridSearchCV(pipeline, param_grid=parameters)
+    cv = GridSearchCV(pipeline, param_grid=parameters, n_jobs=4)
 
     return cv
 
@@ -153,14 +102,11 @@ def build_model():
 def evaluate_model(model, X_test, Y_test, category_names):
     '''
     Evaluates the Accuracy of the model and prints the scikit classification report
-
             Parameters:
                     model(obj): the trained model
                     X_test(obj): test messasges
                     Y_test(obj): test categories
                     category_names: list of all categories
-
-
             Returns:
                     None
     '''
@@ -174,12 +120,9 @@ def evaluate_model(model, X_test, Y_test, category_names):
 def save_model(model, model_filepath):
     '''
     Saves model for later usage
-
             Parameters:
                     model(obj): the model which should be saved
                     model_filepath(str): the path where the model should be saved
-
-
             Returns:
                     None
     '''
@@ -192,7 +135,7 @@ def main():
         print('Loading data...\n    DATABASE: {}'.format(database_filepath))
         X, Y, category_names = load_data(database_filepath)
         X_train, X_test, Y_train, Y_test = train_test_split(
-            X, Y, test_size=0.2)
+            X, Y, test_size=0.3)
 
         print('Building model...')
         model = build_model()
