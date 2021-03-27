@@ -34,18 +34,14 @@ def load_data(database_filepath):
                     categorie_names (obj): list of all cateorie names
     '''
     
+    #reads date from database
     table_name = "disaster_response"
-    
     engine = create_engine('sqlite:///' + database_filepath)
-    
     df = pd.read_sql_table(table_name, con=engine)
     
-    df = df.iloc[:10]
-    
+    #creating return variables
     X = df["message"].values
-    
     y = df.iloc[:,5:]
-    
     category_names =  y.columns
 
     return X, y, category_names
@@ -60,7 +56,8 @@ class StartingVerbExtractor(BaseEstimator, TransformerMixin):
             Returns:
                     bool : true if text starts with a verb, else false
     '''
-
+    #check if text starts with a verb
+    #return true if it does, false if not
     def starting_verb(self, text):
         sentence_list = nltk.sent_tokenize(text)
         for sentence in sentence_list:
@@ -87,18 +84,17 @@ def tokenize(text):
             Returns:
                     clean_tokenz (obj): list with cleaned tokens
     '''
-    url_regex = 'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 
-    detected_urls = re.findall(url_regex, text)
-    for url in detected_urls:
-        text = text.replace(url, "urlplaceholder")
-    
     #remove all special characters
     text = re.sub(r'[^a-zA-Z0-9]', ' ', text.lower())
     
+    #tokenize text
     tokens = word_tokenize(text)
+
+    #define Lemmatizer
     lemmatizer = WordNetLemmatizer()
 
+    #leammatize all tokens and append them to clean_tokens list
     clean_tokens = []
     for tok in tokens:
         clean_tok = lemmatizer.lemmatize(tok).lower().strip()
@@ -117,6 +113,7 @@ def build_model():
                     cv(obj): GridSearchCV model 
     '''
     
+    #define Pipeline
     pipeline = Pipeline([
         ('features', FeatureUnion([
 
@@ -131,6 +128,7 @@ def build_model():
         ('clf', MultiOutputClassifier(RandomForestClassifier()))
     ])
 
+    #define parameters
     parameters = {
         'features__text_pipeline__vect__ngram_range': ((1, 1), (1, 2)),
         'features__text_pipeline__vect__max_df': (0.5, 0.75, 1.0),
@@ -166,7 +164,10 @@ def evaluate_model(model, X_test, Y_test, category_names):
             Returns:
                     None
     '''
+    #predict with model to be able to evaluate
     y_pred = model.predict(X_test)
+    
+    #print evaluation
     print(classification_report(Y_test, y_pred, target_names=category_names))
 
 
