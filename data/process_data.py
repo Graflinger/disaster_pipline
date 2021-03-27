@@ -1,116 +1,160 @@
-import sys
-import pandas as pd
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix, classification_report
 from sqlalchemy import create_engine
+import pickle
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
+import pandas as pd
+import numpy as np
+import re
+import sys
+import nltk
+nltk.download(['punkt', 'wordnet', 'averaged_perceptron_tagger'])
 
 
-def load_data(messages_filepath, categories_filepath):
+
+def load_data(database_filepath):
     '''
-    Load and merges the 2 given files and returns them as 1 pandas dataframe object
-
+    Load data from databse
             Parameters:
-                    messages_filepath (str): filepath to messsages csv
-                    categories_filepath (str): filepath to categories csv
-
+                    messages_filepath (str): filepath to database
             Returns:
-                    df_merged (object): loaded files merged into one dataframe
+                    X (obj): messages column from the data
+                    y (obj): dataframe including all categories
+                    categorie_names (obj): list of all cateorie names
     '''
-    #read csvs
-    df_messages = pd.read_csv("disaster_messages.csv")
-    df_categories = pd.read_csv("disaster_categories.csv")
-    
-    #merge csvs
-    df_merged = pd.merge(df_messages, df_categories, on="id")
-    
-    return df_merged
+
+    # reads date from database
+    table_name = "disaster_response"
+    engine = create_engine('sqlite:///' + database_filepath)
+    df = pd.read_sql_table(table_name, con=engine)
+
+    # creating return variables
+    X = df["message"].values
+
+    y = df.iloc[:, 5:]
+    y= y.astype('int')
+    category_names = y.columns
+
+    return X, y, category_names
 
 
-def clean_data(df):
+def tokenize(text):
     '''
-    Cleans the merged dataframe from load_data()
-
+    tokenizes text for further analysis
             Parameters:
-                    df (object): uncleanded data as dataframe 
-                    
-
+                    text (str): text which should get tokenized
             Returns:
-                    df_cleaned (object): cleaned data as dataframe
+                    clean_tokenz (obj): list with cleaned tokens
     '''
-    
-    #create a new dataframe with a column for each categorie
-    df_categories = pd.DataFrame(df["categories"].str.split(';', expand=True).values,
-                 columns=[df["categories"].str.split(';')[0]])
 
-    #reset multilevel index by changing columns list so single level index
-    df_categories.columns = df["categories"].str.split(';')[0]
+    # remove all special characters
+    text = re.sub(r'[^a-zA-Z0-9]', ' ', text.lower())
 
-    #only keeping 0 or 1 from values and 
-    for column in df_categories.columns:
-        df_categories[column] = df_categories[column].str[-1:]
+    # tokenize text
+    tokens = word_tokenize(text)
 
-    #correct column names
-    temp_col_name_list = []
-    for col_name in df_categories.columns:
-        temp_col_name_list.append(col_name[:-2])
+    # define Lemmatizer
+    lemmatizer = WordNetLemmatizer()
 
-    df_categories.columns = temp_col_name_list
-    
-    #cast all new columns to numeric as they are only 0 and 1
-    df_categories[temp_col_name_list] = df_categories[temp_col_name_list].apply(pd.to_numeric)
+    # leammatize all tokens and append them to clean_tokens list
+    clean_tokens = []
+    for tok in tokens:
+        clean_tok = lemmatizer.lemmatize(tok).lower().strip()
+        clean_tokens.append(clean_tok)
 
-    #concat both dataframes to get a single one with full informatio
-    df = pd.concat([df, df_categories], axis=1)
-
-    #drop categories column
-    df_cleaned = df.drop(columns=["categories"])
-
-    return df_cleaned
+    return clean_tokens
 
 
-def save_data(df, database_filename):
+def build_model():
     '''
-    Takes data as dataframe and stores it into a database at a given location
-
+    build the GridSearchCV Model via usage of a pipeline and defines the parameters for the moden 
             Parameters:
-                    df (object): data as dataframe 
-                    database_filename (str): name of the database, where the df will be saved in
-                    
+                    None
+            Returns:
+                    cv(obj): GridSearchCV model 
+    '''
 
+    # define Pipeline
+    pipeline = Pipeline([
+        ('vect', CountVectorizer(tokenizer=tokenize)),
+        ('tfidf', TfidfTransformer()),
+        ('clf', MultiOutputClassifier(RandomForestClassifier()))])
+
+    # define parameters
+    parameters = {
+        'clf__estimator__min_samples_leaf': [50, 100, 200],
+        'clf__estimator__min_samples_leaf': [2, 3, 4],
+    }
+
+    cv = GridSearchCV(pipeline, param_grid=parameters, n_jobs=4)
+
+    return cv
+
+
+def evaluate_model(model, X_test, Y_test, category_names):
+    '''
+    Evaluates the Accuracy of the model and prints the scikit classification report
+            Parameters:
+                    model(obj): the trained model
+                    X_test(obj): test messasges
+                    Y_test(obj): test categories
+                    category_names: list of all categories
             Returns:
                     None
     '''
-    #create sqllite engine
-    engine = create_engine('sqlite:///' + database_filename, echo=True)
-    sqlite_connection = engine.connect()
-    
-    #save dataframe to sql database
-    df.to_sql("disaster_response", sqlite_connection, if_exists='replace')
-    return  
+    # predict with model to be able to evaluate
+    y_pred = model.predict(X_test)
+
+    # print evaluation
+    print(classification_report(Y_test, y_pred, target_names=category_names))
+
+
+def save_model(model, model_filepath):
+    '''
+    Saves model for later usage
+            Parameters:
+                    model(obj): the model which should be saved
+                    model_filepath(str): the path where the model should be saved
+            Returns:
+                    None
+    '''
+    pickle.dump(model, open(model_filepath, 'wb'))
 
 
 def main():
-    if len(sys.argv) == 4:
+    if len(sys.argv) == 3:
+        database_filepath, model_filepath = sys.argv[1:]
+        print('Loading data...\n    DATABASE: {}'.format(database_filepath))
+        X, Y, category_names = load_data(database_filepath)
+        X_train, X_test, Y_train, Y_test = train_test_split(
+            X, Y, test_size=0.3)
 
-        messages_filepath, categories_filepath, database_filepath = sys.argv[1:]
+        print('Building model...')
+        model = build_model()
 
-        print('Loading data...\n    MESSAGES: {}\n    CATEGORIES: {}'
-              .format(messages_filepath, categories_filepath))
-        df = load_data(messages_filepath, categories_filepath)
+        print('Training model...')
+        model.fit(X_train, Y_train)
 
-        print('Cleaning data...')
-        df = clean_data(df)
-        
-        print('Saving data...\n    DATABASE: {}'.format(database_filepath))
-        save_data(df, database_filepath)
-        
-        print('Cleaned data saved to database!')
-    
+        print('Evaluating model...')
+        evaluate_model(model, X_test, Y_test, category_names)
+
+        print('Saving model...\n    MODEL: {}'.format(model_filepath))
+        save_model(model, model_filepath)
+
+        print('Trained model saved!')
+
     else:
-        print('Please provide the filepaths of the messages and categories '\
-              'datasets as the first and second argument respectively, as '\
-              'well as the filepath of the database to save the cleaned data '\
-              'to as the third argument. \n\nExample: python process_data.py '\
-              'disaster_messages.csv disaster_categories.csv '\
-              'DisasterResponse.db')
+        print('Please provide the filepath of the disaster messages database '
+              'as the first argument and the filepath of the pickle file to '
+              'save the model to as the second argument. \n\nExample: python '
+              'train_classifier.py ../data/DisasterResponse.db classifier.pkl')
 
 
 if __name__ == '__main__':
