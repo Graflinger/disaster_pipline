@@ -34,7 +34,7 @@ Used packages are:
     - To run ETL pipeline that cleans data and stores in database from the data directory
         `python process_data.py disaster_messages.csv disaster_categories.csv DisasterResponse.db`
     - To run ML pipeline that trains classifier and saves from the model directory
-        `python train_classifier.py data/DisasterResponse.db classifier.pkl`
+        `python train_classifier.py ../data/DisasterResponse.db classifier.pkl`
 
 2. Run the following command in the app's directory to run your web app.
     `python run.py`
