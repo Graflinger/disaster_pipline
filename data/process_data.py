@@ -14,10 +14,11 @@ def load_data(messages_filepath, categories_filepath):
             Returns:
                     df_merged (object): loaded files merged into one dataframe
     '''
-    
+    #read csvs
     df_messages = pd.read_csv("disaster_messages.csv")
     df_categories = pd.read_csv("disaster_categories.csv")
     
+    #merge csvs
     df_merged = pd.merge(df_messages, df_categories, on="id")
     
     return df_merged
@@ -59,8 +60,8 @@ def clean_data(df):
     #concat both dataframes to get a single one with full informatio
     df = pd.concat([df, df_categories], axis=1)
 
-    #drop categories and original column, because they are not needed for further analyis
-    df_cleaned = df.drop(columns=["categories", "original"])
+    #drop categories column
+    df_cleaned = df.drop(columns=["categories"])
 
     return df_cleaned
 
@@ -77,11 +78,12 @@ def save_data(df, database_filename):
             Returns:
                     None
     '''
-    
+    #create sqllite engine
     engine = create_engine('sqlite:///' + database_filename, echo=True)
     sqlite_connection = engine.connect()
     
-    df.to_sql("disaster_respone", sqlite_connection, if_exists='replace')
+    #save dataframe to sql database
+    df.to_sql("disaster_response", sqlite_connection, if_exists='replace')
     return  
 
 
