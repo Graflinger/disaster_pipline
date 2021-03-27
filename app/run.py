@@ -15,15 +15,32 @@ from sqlalchemy import create_engine
 app = Flask(__name__)
 
 def tokenize(text):
+    '''
+    tokenizes text for further analysis
+
+            Parameters:
+                    text (str): text which should get tokenized
+            Returns:
+                    clean_tokenz (obj): list with cleaned tokens
+    '''
+
+    #remove all special characters
+    text = re.sub(r'[^a-zA-Z0-9]', ' ', text.lower())
+    
+    #tokenize text
     tokens = word_tokenize(text)
+
+    #define Lemmatizer
     lemmatizer = WordNetLemmatizer()
 
+    #leammatize all tokens and append them to clean_tokens list
     clean_tokens = []
     for tok in tokens:
         clean_tok = lemmatizer.lemmatize(tok).lower().strip()
         clean_tokens.append(clean_tok)
 
     return clean_tokens
+
 
 # load data
 engine = create_engine('sqlite:///../data/DisasterResponse.db')
