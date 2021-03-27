@@ -1,24 +1,54 @@
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix, classification_report
+from sqlalchemy import create_engine
+import pickle
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
+import pandas as pd
+import numpy as np
+import re
 import sys
 import nltk
 nltk.download(['punkt', 'wordnet', 'averaged_perceptron_tagger'])
 
-import re
-import numpy as np
-import pandas as pd
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
-import pickle
 
-from sqlalchemy import create_engine
+class StartingVerbExtractor(BaseEstimator, TransformerMixin):
+    '''
+    Custom Transformer to evaluate, if a text starts with a verb 
 
-from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.model_selection import GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline, FeatureUnion
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.multioutput import MultiOutputClassifier
+            Parameters:
+                    BaseEstimator (obj): sklearn.base BaseEstimator
+                    TransformerMixin (obj): sklearn.base TransformerMixin
+            Returns:
+                    bool : true if text starts with a verb, else false
+    '''
+    # check if text starts with a verb
+    # return true if it does, false if not
+
+    def starting_verb(self, text):
+        sentence_list = nltk.sent_tokenize(text)
+        for sentence in sentence_list:
+            pos_tags = nltk.pos_tag(tokenize(sentence))
+            try:
+                first_word, first_tag = pos_tags[0]
+                if first_tag in ['VB', 'VBP'] or first_word == 'RT':
+                    return True
+            except:
+                return False
+        return False
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, X):
+        X_tagged = pd.Series(X).apply(self.starting_verb)
+        return pd.DataFrame(X_tagged)
 
 
 def load_data(database_filepath):
@@ -33,46 +63,18 @@ def load_data(database_filepath):
                     y (obj): dataframe including all categories
                     categorie_names (obj): list of all cateorie names
     '''
-    
-    #reads date from database
+
+    # reads date from database
     table_name = "disaster_response"
     engine = create_engine('sqlite:///' + database_filepath)
     df = pd.read_sql_table(table_name, con=engine)
-    
-    #creating return variables
+
+    # creating return variables
     X = df["message"].values
-    y = df.iloc[:,5:]
-    category_names =  y.columns
+    y = df.iloc[:, 5:]
+    category_names = y.columns
 
     return X, y, category_names
-
-class StartingVerbExtractor(BaseEstimator, TransformerMixin):
-    '''
-    Custom Transformer to evaluate, if a text starts with a verb 
-
-            Parameters:
-                    BaseEstimator (obj): sklearn.base BaseEstimator
-                    TransformerMixin (obj): sklearn.base TransformerMixin
-            Returns:
-                    bool : true if text starts with a verb, else false
-    '''
-    #check if text starts with a verb
-    #return true if it does, false if not
-    def starting_verb(self, text):
-        sentence_list = nltk.sent_tokenize(text)
-        for sentence in sentence_list:
-            pos_tags = nltk.pos_tag(tokenize(sentence))
-            first_word, first_tag = pos_tags[0]
-            if first_tag in ['VB', 'VBP'] or first_word == 'RT':
-                return True
-        return False
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, X):
-        X_tagged = pd.Series(X).apply(self.starting_verb)
-        return pd.DataFrame(X_tagged)
 
 
 def tokenize(text):
@@ -85,16 +87,16 @@ def tokenize(text):
                     clean_tokenz (obj): list with cleaned tokens
     '''
 
-    #remove all special characters
+    # remove all special characters
     text = re.sub(r'[^a-zA-Z0-9]', ' ', text.lower())
-    
-    #tokenize text
+
+    # tokenize text
     tokens = word_tokenize(text)
 
-    #define Lemmatizer
+    # define Lemmatizer
     lemmatizer = WordNetLemmatizer()
 
-    #leammatize all tokens and append them to clean_tokens list
+    # leammatize all tokens and append them to clean_tokens list
     clean_tokens = []
     for tok in tokens:
         clean_tok = lemmatizer.lemmatize(tok).lower().strip()
@@ -112,8 +114,8 @@ def build_model():
             Returns:
                     cv(obj): GridSearchCV model 
     '''
-    
-    #define Pipeline
+
+    # define Pipeline
     pipeline = Pipeline([
         ('features', FeatureUnion([
 
@@ -128,7 +130,7 @@ def build_model():
         ('clf', MultiOutputClassifier(RandomForestClassifier()))
     ])
 
-    #define parameters
+    # define parameters
     parameters = {
         'features__text_pipeline__vect__ngram_range': ((1, 1), (1, 2)),
         'features__text_pipeline__vect__max_df': (0.5, 0.75, 1.0),
@@ -147,8 +149,6 @@ def build_model():
 
     return cv
 
-    
-
 
 def evaluate_model(model, X_test, Y_test, category_names):
     '''
@@ -159,45 +159,47 @@ def evaluate_model(model, X_test, Y_test, category_names):
                     X_test(obj): test messasges
                     Y_test(obj): test categories
                     category_names: list of all categories
-                    
-                    
+
+
             Returns:
                     None
     '''
-    #predict with model to be able to evaluate
+    # predict with model to be able to evaluate
     y_pred = model.predict(X_test)
-    
-    #print evaluation
+
+    # print evaluation
     print(classification_report(Y_test, y_pred, target_names=category_names))
 
 
 def save_model(model, model_filepath):
     '''
     Saves model for later usage
-    
+
             Parameters:
                     model(obj): the model which should be saved
                     model_filepath(str): the path where the model should be saved
-                    
-                    
+
+
             Returns:
                     None
     '''
     pickle.dump(model, open(model_filepath, 'wb'))
+
 
 def main():
     if len(sys.argv) == 3:
         database_filepath, model_filepath = sys.argv[1:]
         print('Loading data...\n    DATABASE: {}'.format(database_filepath))
         X, Y, category_names = load_data(database_filepath)
-        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2)
-        
+        X_train, X_test, Y_train, Y_test = train_test_split(
+            X, Y, test_size=0.2)
+
         print('Building model...')
         model = build_model()
-        
+
         print('Training model...')
         model.fit(X_train, Y_train)
-        
+
         print('Evaluating model...')
         evaluate_model(model, X_test, Y_test, category_names)
 
@@ -207,9 +209,9 @@ def main():
         print('Trained model saved!')
 
     else:
-        print('Please provide the filepath of the disaster messages database '\
-              'as the first argument and the filepath of the pickle file to '\
-              'save the model to as the second argument. \n\nExample: python '\
+        print('Please provide the filepath of the disaster messages database '
+              'as the first argument and the filepath of the pickle file to '
+              'save the model to as the second argument. \n\nExample: python '
               'train_classifier.py ../data/DisasterResponse.db classifier.pkl')
 
 
